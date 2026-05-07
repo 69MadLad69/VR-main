@@ -11,23 +11,147 @@ let video;
 let webcamTexture;
 let quadVBO;
 
+let ws = null;
+let sensorRotMatrix = null;
+
+let filteredAccel = { x: 0.0, y: 0.0, z: 9.81 };
+const SMOOTH = 0.15;
+
 function ShaderProgram(name, program) {
   this.name = name;
   this.prog = program;
-
   this.iAttribVertex = -1;
   this.iModelViewMatrix = -1;
   this.iProjectionMatrix = -1;
   this.iColor = -1;
-
   this.Use = function () {
     gl.useProgram(this.prog);
   };
 }
 
 /**
+ * @param {number} ax
+ * @param {number} ay
+ * @param {number} az
+ * @returns {number[]}
+ */
+function accelToRotationMatrix(ax, ay, az) {
+  const len = Math.sqrt(ax * ax + ay * ay + az * az);
+  if (len < 1e-5) {
+    return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  }
+
+  const gx = ax / len;
+  const gy = ay / len;
+  const gz = az / len;
+
+  const rax = -gy;
+  const ray = gx;
+
+  const axisLen = Math.sqrt(rax * rax + ray * ray);
+
+  if (axisLen < 1e-5) {
+    if (gz >= 0) {
+      return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    } else {
+      return m4.axisRotation([1, 0, 0], Math.PI);
+    }
+  }
+
+  const angle = Math.acos(Math.max(-1.0, Math.min(1.0, gz)));
+
+  return m4.axisRotation([rax / axisLen, ray / axisLen, 0], angle);
+}
+
+function connectSensor() {
+  const ip = document.getElementById("wsIP").value.trim();
+  const port = document.getElementById("wsPort").value.trim();
+  const url = `ws://${ip}:${port}/sensor/connect?type=android.sensor.accelerometer`;
+
+  setSensorStatus("connecting");
+
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    setSensorStatus("error", "Invalid address");
+    return;
+  }
+
+  ws.onopen = () => {
+    setSensorStatus("connected");
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const packet = JSON.parse(event.data);
+      const [ax, ay, az] = packet.values;
+
+      filteredAccel.x = SMOOTH * ax + (1 - SMOOTH) * filteredAccel.x;
+      filteredAccel.y = SMOOTH * ay + (1 - SMOOTH) * filteredAccel.y;
+      filteredAccel.z = SMOOTH * az + (1 - SMOOTH) * filteredAccel.z;
+
+      sensorRotMatrix = accelToRotationMatrix(
+        filteredAccel.x,
+        filteredAccel.y,
+        filteredAccel.z,
+      );
+    } catch (_) {}
+  };
+
+  ws.onerror = () => {
+    setSensorStatus("error", "Connection failed");
+  };
+
+  ws.onclose = () => {
+    setSensorStatus("disconnected");
+    sensorRotMatrix = null;
+    ws = null;
+  };
+}
+
+function disconnectSensor() {
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+  sensorRotMatrix = null;
+  setSensorStatus("disconnected");
+}
+
+/**
+ * @param {'connecting'|'connected'|'error'|'disconnected'} state
+ * @param {string} [detail]
+ */
+function setSensorStatus(state, detail) {
+  const statusEl = document.getElementById("wsStatus");
+  const btnEl = document.getElementById("wsConnect");
+
+  const labels = {
+    connecting: { text: "○ Connecting…", color: "#FFC107" },
+    connected: { text: "● Connected", color: "#4CAF50" },
+    error: {
+      text: "● Error" + (detail ? ": " + detail : ""),
+      color: "#F44336",
+    },
+    disconnected: { text: "● Disconnected", color: "#888" },
+  };
+
+  const label = labels[state] || labels.disconnected;
+  statusEl.textContent = label.text;
+  statusEl.style.color = label.color;
+
+  if (state === "connected" || state === "connecting") {
+    btnEl.textContent = state === "connecting" ? "Cancel" : "Disconnect";
+    btnEl.onclick = disconnectSensor;
+  } else {
+    btnEl.textContent = "Connect";
+    btnEl.onclick = connectSensor;
+  }
+}
+
+/**
  * @param {Float32Array} frustumMat
- * @param {Float32Array} eyeTranslate
+ * @param {number[]}     eyeTranslate
  */
 function drawEye(frustumMat, eyeTranslate) {
   drawWebcamBackground();
@@ -41,11 +165,13 @@ function drawEye(frustumMat, eyeTranslate) {
 
   gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, frustumMat);
 
-  let modelView = spaceball.getViewMatrix();
-  let rotateToCenter = m4.axisRotation([0.707, 0.707, 0], 0.7);
-  let translateToScene = m4.translation(0, 0, -8);
+  const baseRotation =
+    sensorRotMatrix !== null ? sensorRotMatrix : spaceball.getViewMatrix();
 
-  let acc = m4.multiply(rotateToCenter, modelView);
+  const rotateToCenter = m4.axisRotation([0.707, 0.707, 0], 0.7);
+  const translateToScene = m4.translation(0, 0, -10);
+
+  let acc = m4.multiply(rotateToCenter, baseRotation);
   acc = m4.multiply(eyeTranslate, acc);
   acc = m4.multiply(translateToScene, acc);
 
@@ -73,7 +199,6 @@ function drawWebcamBackground() {
   gl.depthMask(false);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
-
   gl.vertexAttribPointer(webcamProg.iPosition, 2, gl.FLOAT, false, 16, 0);
   gl.vertexAttribPointer(webcamProg.iTexCoord, 2, gl.FLOAT, false, 16, 8);
   gl.enableVertexAttribArray(webcamProg.iPosition);
@@ -90,10 +215,10 @@ function draw() {
   gl.clearColor(0, 0, 0, 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  let leftProj = stereoCam.calcLeftFrustum();
-  let rightProj = stereoCam.calcRightFrustum();
-  let eyeL = m4.translation(stereoCam.eyeSeparation / 2, 0, 0);
-  let eyeR = m4.translation(-stereoCam.eyeSeparation / 2, 0, 0);
+  const leftProj = stereoCam.calcLeftFrustum();
+  const rightProj = stereoCam.calcRightFrustum();
+  const eyeL = m4.translation(stereoCam.eyeSeparation / 2, 0, 0);
+  const eyeR = m4.translation(-stereoCam.eyeSeparation / 2, 0, 0);
 
   gl.colorMask(true, false, false, true);
   drawEye(leftProj, eyeL);
@@ -117,21 +242,18 @@ function initWebcam() {
   video.muted = true;
 
   navigator.mediaDevices
-    .getUserMedia({ video: true })
+    .getUserMedia({ video: { facingMode: "user" } })
     .then((stream) => {
       video.srcObject = stream;
-
       video.onloadedmetadata = () => {
         video.play();
       };
-
       document.getElementById("camStatus").textContent = "🎥 Webcam active";
     })
     .catch((err) => {
       console.error(err);
+      document.getElementById("camStatus").textContent = "⚠ Webcam unavailable";
     });
-
-  console.log(video.readyState);
 
   webcamTexture = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, webcamTexture);
@@ -151,7 +273,7 @@ function initWebcam() {
     new Uint8Array([0, 0, 0, 255]),
   );
 
-  let quad = new Float32Array([
+  const quad = new Float32Array([
     -1, -1, 0, 1, 1, -1, 1, 1, 1, 1, 1, 0, -1, 1, 0, 0,
   ]);
   quadVBO = gl.createBuffer();
@@ -219,7 +341,7 @@ function CreateSurfaceData(data) {
 }
 
 function initGL() {
-  let prog3d = createProgram(gl, vertexShaderSource, fragmentShaderSource);
+  const prog3d = createProgram(gl, vertexShaderSource, fragmentShaderSource);
   shProgram = new ShaderProgram("Basic", prog3d);
   shProgram.Use();
   shProgram.iAttribVertex = gl.getAttribLocation(prog3d, "vertex");
@@ -230,13 +352,13 @@ function initGL() {
   );
   shProgram.iColor = gl.getUniformLocation(prog3d, "color");
 
-  let progCam = createProgram(gl, webcamVertexSource, webcamFragmentSource);
+  const progCam = createProgram(gl, webcamVertexSource, webcamFragmentSource);
   webcamProg = new ShaderProgram("Webcam", progCam);
   webcamProg.iPosition = gl.getAttribLocation(progCam, "aPosition");
   webcamProg.iTexCoord = gl.getAttribLocation(progCam, "aTexCoord");
   webcamProg.iSampler = gl.getUniformLocation(progCam, "uSampler");
 
-  let data = {};
+  const data = {};
   CreateSurfaceData(data);
   surface = new Model("Surface");
   surface.BufferData(data.verticesF32, data.indicesU16);
@@ -256,14 +378,14 @@ function initGL() {
 
 function createProgram(gl, vSrc, fSrc) {
   function compile(type, src) {
-    let sh = gl.createShader(type);
+    const sh = gl.createShader(type);
     gl.shaderSource(sh, src);
     gl.compileShader(sh);
     if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
       throw new Error(gl.getShaderInfoLog(sh));
     return sh;
   }
-  let prog = gl.createProgram();
+  const prog = gl.createProgram();
   gl.attachShader(prog, compile(gl.VERTEX_SHADER, vSrc));
   gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fSrc));
   gl.linkProgram(prog);
@@ -272,16 +394,11 @@ function createProgram(gl, vSrc, fSrc) {
   return prog;
 }
 
-/**
- * @param {string}   sliderId
- * @param {string}   spanId
- * @param {Function} setter
- */
 function bindSlider(sliderId, spanId, setter) {
-  let slider = document.getElementById(sliderId);
-  let span = document.getElementById(spanId);
+  const slider = document.getElementById(sliderId);
+  const span = document.getElementById(spanId);
   function update() {
-    let v = parseFloat(slider.value);
+    const v = parseFloat(slider.value);
     span.textContent = v.toFixed(2);
     setter(v);
   }
@@ -322,6 +439,8 @@ function init() {
   bindSlider("convergence", "convergenceVal", (v) => {
     stereoCam.mConvergence = v;
   });
+
+  setSensorStatus("disconnected");
 
   renderLoop();
 }

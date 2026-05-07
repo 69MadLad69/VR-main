@@ -146,6 +146,52 @@ button:hover {
     color: #e8a838;
     display: none;
 }
+
+input[type="text"] {
+      width: 100%;
+      background: #111;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 3px;
+      padding: 5px 7px;
+      font-family: monospace;
+      font-size: 12px;
+      box-sizing: border-box;
+      margin-top: 3px;
+    }
+ 
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #2196F3;
+    }
+
+
+    .connect-button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      margin: 5px 0;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+      width: 100%;
+    }
+ 
+    .connect-button:hover { background: #45a049; }
+ 
+    .connect-button.danger {
+      background: #c0392b;
+    }
+ 
+    .connect-button.danger:hover { background: #a93226; }
+
+    #wsStatus {
+      font-size: 11px;
+      color: #888;
+      margin-top: 5px;
+    }
+ 
 </style>
 
 <script src="./Utils/trackball-rotator.js"></script>
@@ -162,7 +208,8 @@ button:hover {
 <canvas id="webglcanvas"></canvas>
 
 <div id="controls">
-    <h3>WebGL Stereo Camera</h3>
+    <h3>PA#2 — Stereo + Sensor TUI</h3>
+    <h4>Camera parameters</h4>
 
     <div class="control-group">
         <label>Eye Separation:
@@ -192,6 +239,23 @@ button:hover {
         <input type="range" id="convergence" min="1" max="20" step="0.1" value="10">
     </div>
 
+    <div class="control-group">
+        <h4>&#128241; Sensor Server (WebSocket)</h4>
+ 
+        <div class="control-group">
+        <label>Phone IP address:</label>
+        <input type="text" id="wsIP" value="192.168.0.100" spellcheck="false">
+        </div>
+    
+        <div class="control-group">
+        <label>Port:</label>
+        <input type="text" id="wsPort" value="8080" spellcheck="false">
+        </div>
+
+        <button id="wsConnect" class="connect-button">Connect</button>
+        <div id="wsStatus">&#9679; Disconnected</div>
+    </div>
+
     <div id="warning">
         ⚠ Near clip ≥ convergence — stereo may look wrong.
     </div>
@@ -206,6 +270,11 @@ button:hover {
         • Scroll to zoom<br>
         • Wear red/cyan glasses<br>
         • Hide menu: toggle button
+        <strong>Rotation source:</strong><br>
+        &bull; Sensor connected &rarr; phone tilt drives model<br>
+        &bull; No sensor &rarr; drag canvas to rotate<br><br>
+        <strong>Install Sensor Server APK</strong> on Android,<br>
+        start it, enable Accelerometer stream, enter the IP shown in the app above.
     </div>
 </div>
 
