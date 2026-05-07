@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PA#1 — WebGL Stereo Camera</title>
+
+<style>
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #1a1a1a;
+    font-family: monospace;
+    color: #fff;
+}
+
+#canvas-holder {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#webglcanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#controls {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 260px;
+    height: 100%;
+    background: rgba(0,0,0,0.82);
+    padding: 15px;
+    box-sizing: border-box;
+    border-right: 1px solid #444;
+    transition: transform 0.3s ease;
+    overflow-y: auto;
+}
+
+#controls.hidden {
+    transform: translateX(-100%);
+}
+
+.toggle-menu {
+    position: absolute;
+    top: 15px;
+    left: 270px;
+    background: #2196F3;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.25s;
+    z-index: 10;
+}
+
+.toggle-menu:hover {
+    background: #0b7dda;
+}
+
+h3 {
+    margin: 10px 0 20px 0;
+    font-size: 14px;
+    border-bottom: 1px solid #444;
+    padding-bottom: 8px;
+}
+
+.control-group {
+    margin: 12px 0;
+}
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.value-display {
+    float: right;
+    font-size: 12px;
+}
+
+input[type="range"] {
+    width: 100%;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    background: #333;
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #2196F3;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 0 6px rgba(0,0,0,0.4);
+}
+
+/* firefox */
+input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #2196F3;
+    cursor: pointer;
+    border: 2px solid white;
+}
+
+button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    margin: 5px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+button:hover {
+    background: #45a049;
+}
+
+.info,
+#camStatus,
+#warning {
+    font-size: 11px;
+    color: #888;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #333;
+}
+
+#warning {
+    color: #e8a838;
+    display: none;
+}
+</style>
+
+<script src="./Utils/trackball-rotator.js"></script>
+<script src="./Utils/m4.js"></script>
+<script src="./shader.gpu"></script>
+<script src="./Model.js"></script>
+<script src="./Utils/StereoCamera.js"></script>
+<script src="./main.js"></script>
+</head>
+
+<body onload="init()">
+
+<div id="canvas-holder">
+<canvas id="webglcanvas"></canvas>
+
+<div id="controls">
+    <h3>WebGL Stereo Camera</h3>
+
+    <div class="control-group">
+        <label>Eye Separation:
+            <span id="eyeSepVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="eyeSep" min="0" max="2" step="0.01" value="0.5">
+    </div>
+
+    <div class="control-group">
+        <label>Field of View (°):
+            <span id="fovVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="fov" min="5" max="90" step="0.5" value="28.6">
+    </div>
+
+    <div class="control-group">
+        <label>Near Clip Distance:
+            <span id="nearVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="near" min="0.5" max="9.5" step="0.1" value="8">
+    </div>
+
+    <div class="control-group">
+        <label>Convergence Distance:
+            <span id="convergenceVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="convergence" min="1" max="20" step="0.1" value="10">
+    </div>
+
+    <div id="warning">
+        ⚠ Near clip ≥ convergence — stereo may look wrong.
+    </div>
+
+    <div id="camStatus">
+        🎥 Requesting webcam...
+    </div>
+
+    <div class="info">
+        <strong>Controls:</strong><br>
+        • Drag to rotate<br>
+        • Scroll to zoom<br>
+        • Wear red/cyan glasses<br>
+        • Hide menu: toggle button
+    </div>
+</div>
+
+<button class="toggle-menu" id="toggleMenu">Hide Menu</button>
+</div>
+
+<script>
+const controls = document.getElementById("controls");
+const toggleBtn = document.getElementById("toggleMenu");
+
+toggleBtn.addEventListener("click", () => {
+    controls.classList.toggle("hidden");
+    toggleBtn.textContent =
+        controls.classList.contains("hidden") ? "Show Menu" : "Hide Menu";
+    toggleBtn.style.left =
+        controls.classList.contains("hidden") ? "10px" : "270px";
+});
+
+function resizeCanvas() {
+    const canvas = document.getElementById("webglcanvas");
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+
+    if (typeof gl !== "undefined" && gl) {
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    }
+}
+
+window.addEventListener("resize", resizeCanvas);
+window.addEventListener("load", resizeCanvas);
+
+let zoom = 10;
+
+function handleZoom(event) {
+    event.preventDefault();
+
+    const fovSlider = document.getElementById("fov");
+    let current = parseFloat(fovSlider.value);
+
+    current += event.deltaY * 0.02;
+
+    current = Math.max(5, Math.min(90, current));
+
+    fovSlider.value = current;
+
+    fovSlider.dispatchEvent(new Event("input"));
+
+    draw();
+}
+
+document.addEventListener("wheel", handleZoom, { passive:false });
+
+(function () {
+    const nearEl = document.getElementById("near");
+    const convEl = document.getElementById("convergence");
+    const warnEl = document.getElementById("warning");
+
+    function check() {
+        warnEl.style.display =
+            parseFloat(nearEl.value) >= parseFloat(convEl.value)
+                ? "block"
+                : "none";
+    }
+
+    nearEl.addEventListener("input", check);
+    convEl.addEventListener("input", check);
+})();
+</script>
+
+</body>
+</html>
