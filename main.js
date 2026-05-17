@@ -11,7 +11,7 @@ let arSource;
 let arContext;
 let arMarker;
 let markerRoot;
-let arContextReady = false; 
+let arContextReady = false;
 let lastVisible = null;
 
 let video;
@@ -28,7 +28,7 @@ function ShaderProgram(name, program) {
   this.iAttribVertex = -1;
   this.iModelViewMatrix = -1;
   this.iProjectionMatrix = -1;
-  this.iColor = -1; 
+  this.iColor = -1;
 
   this.Use = function () {
     gl.useProgram(this.prog);
@@ -98,107 +98,115 @@ function drawWebcamBackground() {
 
 function draw() {
   requestAnimationFrame(draw);
-    if (!arSource.ready || !arContextReady) return;
+  if (!arSource.ready || !arContextReady) return;
 
-    arContext.update(arSource.domElement);
-    updateStatus();
- 
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
- 
-    if (!markerRoot.visible) return;
- 
-    shProgram.Use();
+  arContext.update(arSource.domElement);
+  updateStatus();
 
-    const projMat = arContext.getProjectionMatrix();
-    gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, projMat.elements);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const markerMat = Array.from(markerRoot.matrix.elements);
-    const scaleMat  = m4.scaling(0.15, 0.15, 0.15);
-    const modelView = m4.multiply(markerMat, scaleMat);
-    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, modelView);
+  if (!markerRoot.visible) return;
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, surface.iVertexBuffer);
-    gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(shProgram.iAttribVertex);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
+  shProgram.Use();
 
-    gl.enable(gl.POLYGON_OFFSET_FILL);
-    gl.polygonOffset(1.0, 1.0);
-    gl.uniform4fv(shProgram.iColor, [0.55, 0.55, 0.55, 1.0]);
-    surface.Draw();
-    gl.disable(gl.POLYGON_OFFSET_FILL);
+  const projMat = arContext.getProjectionMatrix();
+  gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, projMat.elements);
 
-    gl.uniform4fv(shProgram.iColor, [1.0, 1.0, 1.0, 1.0]);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surfaceLineIdxBuffer);
-    gl.drawElements(gl.LINES, surfaceLineCount, gl.UNSIGNED_SHORT, 0);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
+  const scale = 0.1;
+  const halfH = 2.0 * scale;
+  const scaleMat = m4.scaling(scale, scale, scale);
+  const rotateMat = m4.axisRotation([1, 0, 0], -Math.PI / 2);
+  const transMat = m4.translation(0, halfH, 0);
+  const local = m4.multiply(transMat, m4.multiply(rotateMat, scaleMat));
+  const markerMat = Array.from(markerRoot.matrix.elements);
+  const modelView = m4.multiply(markerMat, local);
+  gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, modelView);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, surface.iVertexBuffer);
+  gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(shProgram.iAttribVertex);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.enable(gl.POLYGON_OFFSET_FILL);
+  gl.polygonOffset(1.0, 1.0);
+  gl.uniform4fv(shProgram.iColor, [0.15, 0.15, 0.15, 0.4]);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
+  surface.Draw();
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.disable(gl.BLEND);
+
+  gl.uniform4fv(shProgram.iColor, [1.0, 1.0, 1.0, 1.0]);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surfaceLineIdxBuffer);
+  gl.drawElements(gl.LINES, surfaceLineCount, gl.UNSIGNED_SHORT, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
 }
 
 function updateStatus() {
-    if (markerRoot.visible === lastVisible) return;
-    lastVisible = markerRoot.visible;
-    const s = document.getElementById('status');
-    if (markerRoot.visible) {
-        s.textContent = 'Marker locked — surface tracked';
-        s.classList.add('found');
-    } else {
-        s.textContent = 'Point camera at your printed marker…';
-        s.classList.remove('found');
-    }
+  if (markerRoot.visible === lastVisible) return;
+  lastVisible = markerRoot.visible;
+  const s = document.getElementById("status");
+  if (markerRoot.visible) {
+    s.textContent = "Marker locked — surface tracked";
+    s.classList.add("found");
+  } else {
+    s.textContent = "Point camera at your printed marker…";
+    s.classList.remove("found");
+  }
 }
 
 const HIRO_PATTERN_URL =
-    'https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro';
- 
+  "https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro";
+
 const CAMERA_PARA_URL =
-    'https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat';
+  "https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat";
 
 function initAR(canvas) {
-    arSource = new THREEx.ArToolkitSource({
-        sourceType:  'webcam',
-        sourceWidth: 1280,
-        sourceHeight: 960,
-        displayWidth: window.innerWidth,
-        displayHeight: window.innerHeight,
-    });
-    arSource.init(() => setTimeout(onResize, 200));
-    window.addEventListener('resize', onResize);
+  arSource = new THREEx.ArToolkitSource({
+    sourceType: "webcam",
+    sourceWidth: 1280,
+    sourceHeight: 960,
+    displayWidth: window.innerWidth,
+    displayHeight: window.innerHeight,
+  });
+  arSource.init(() => setTimeout(onResize, 200));
+  window.addEventListener("resize", onResize);
 
-    arContext = new THREEx.ArToolkitContext({
-        cameraParametersUrl: CAMERA_PARA_URL,
-        detectionMode:      'mono_and_matrix',
-        matrixCodeType:     '3x3',
-        patternRatio:       0.5,
-        canvasWidth:        640,
-        canvasHeight:       480,
-        maxDetectionRate:   60,
-    });
-    arContext.init(() => {
-        arContextReady = true;
-    });
+  arContext = new THREEx.ArToolkitContext({
+    cameraParametersUrl: CAMERA_PARA_URL,
+    detectionMode: "mono_and_matrix",
+    matrixCodeType: "3x3",
+    patternRatio: 0.5,
+    canvasWidth: 640,
+    canvasHeight: 480,
+    maxDetectionRate: 60,
+  });
+  arContext.init(() => {
+    arContextReady = true;
+  });
 
-    markerRoot = new THREE.Group();
-    markerRoot.matrixAutoUpdate = false;
- 
-    arMarker = new THREEx.ArMarkerControls(arContext, markerRoot, {
-        type:        'pattern',
-        patternUrl:  HIRO_PATTERN_URL,
-        changeMatrixMode: 'modelViewMatrix',
-        smooth:            true,
-        smoothCount:       5,
-        smoothTolerance:   0.01,
-        smoothThreshold:   2,
-    });
- 
-    function onResize() {
-        arSource.onResizeElement();
-        arSource.copyElementSizeTo(canvas);
-        if (arContext.arController !== null) {
-            arSource.copyElementSizeTo(arContext.arController.canvas);
-        }
-        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  markerRoot = new THREE.Group();
+  markerRoot.matrixAutoUpdate = false;
+
+  arMarker = new THREEx.ArMarkerControls(arContext, markerRoot, {
+    type: "pattern",
+    patternUrl: HIRO_PATTERN_URL,
+    changeMatrixMode: "modelViewMatrix",
+    smooth: true,
+    smoothCount: 5,
+    smoothTolerance: 0.01,
+    smoothThreshold: 2,
+  });
+
+  function onResize() {
+    arSource.onResizeElement();
+    arSource.copyElementSizeTo(canvas);
+    if (arContext.arController !== null) {
+      arSource.copyElementSizeTo(arContext.arController.canvas);
     }
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  }
 }
 
 function initWebcam() {
@@ -411,9 +419,9 @@ function init() {
       "<p>Sorry, could not initialise WebGL: " + e + "</p>";
     return;
   }
-  try{
+  try {
     initAR(canvas);
-  } catch(e){
+  } catch (e) {
     document.getElementById("canvas-holder").innerHTML =
       "<p>Sorry, could not initialise AR: " + e + "</p>";
     return;
