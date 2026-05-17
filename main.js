@@ -95,7 +95,7 @@ function drawWebcamBackground() {
 
 function draw() {
   requestAnimationFrame(draw);
-    if (!arSource.ready) return;
+    if (!arSource.ready || !arContextReady) return;
 
     arContext.update(arSource.domElement);
     updateStatus();
@@ -178,7 +178,7 @@ function initAR(canvas) {
  
     arMarker = new THREEx.ArMarkerControls(arContext, markerRoot, {
         type:        'pattern',
-        patternUrl:  './pattern.patt',
+        patternUrl:  HIRO_PATTERN_URL,
         changeMatrixMode: 'modelViewMatrix',
         smooth:            true,
         smoothCount:       5,
@@ -194,11 +194,6 @@ function initAR(canvas) {
         }
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     }
-}
-
-function renderLoop() {
-  draw();
-  requestAnimationFrame(renderLoop);
 }
 
 function initWebcam() {
@@ -421,5 +416,5 @@ function init() {
     stereoCam.mConvergence = v;
   });
 
-  renderLoop();
+  draw();
 }
