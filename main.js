@@ -7,6 +7,12 @@ let webcamProg;
 let spaceball;
 let stereoCam;
 
+let arSource;
+let arContext;
+let arMarker;
+let markerRoot;
+let lastVisible = null;
+
 let video;
 let webcamTexture;
 let quadVBO;
@@ -18,7 +24,7 @@ function ShaderProgram(name, program) {
   this.iAttribVertex = -1;
   this.iModelViewMatrix = -1;
   this.iProjectionMatrix = -1;
-  this.iColor = -1;
+  this.iColor = -1; 
 
   this.Use = function () {
     gl.useProgram(this.prog);
@@ -87,22 +93,86 @@ function drawWebcamBackground() {
 }
 
 function draw() {
-  gl.clearColor(0, 0, 0, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  requestAnimationFrame(draw);
+    if (!arSource.ready) return;
 
-  let leftProj = stereoCam.calcLeftFrustum();
-  let rightProj = stereoCam.calcRightFrustum();
-  let eyeL = m4.translation(stereoCam.eyeSeparation / 2, 0, 0);
-  let eyeR = m4.translation(-stereoCam.eyeSeparation / 2, 0, 0);
+    arContext.update(arSource.domElement);
+    updateStatus();
+ 
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+ 
+    if (!markerRoot.visible) return;
+ 
+    shProgram.Use();
 
-  gl.colorMask(true, false, false, true);
-  drawEye(leftProj, eyeL);
+    const projMat = arContext.getProjectionMatrix();
+    gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, projMat.elements);
 
-  gl.clear(gl.DEPTH_BUFFER_BIT);
-  gl.colorMask(false, true, true, true);
-  drawEye(rightProj, eyeR);
+    const markerMat = Array.from(markerRoot.matrix.elements);
+    const scaleMat  = m4.scaling(0.5, 0.5, 0.5);
+    const modelView = m4.multiply(markerMat, scaleMat);
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, modelView);
 
-  gl.colorMask(true, true, true, true);
+    gl.bindBuffer(gl.ARRAY_BUFFER, surface.iVertexBuffer);
+    gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(shProgram.iAttribVertex);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
+
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(1.0, 1.0);
+    gl.uniform4fv(shProgram.iColor, [0.55, 0.55, 0.55, 1.0]);
+    surface.Draw();
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+
+    gl.uniform4fv(shProgram.iColor, [1.0, 1.0, 1.0, 1.0]);
+    surface.DrawWireframe();
+}
+
+function updateStatus() {
+    if (markerRoot.visible === lastVisible) return;
+    lastVisible = markerRoot.visible;
+    const s = document.getElementById('status');
+    if (markerRoot.visible) {
+        s.textContent = 'Marker locked — surface tracked';
+        s.classList.add('found');
+    } else {
+        s.textContent = 'Point camera at your printed marker…';
+        s.classList.remove('found');
+    }
+}
+
+function initAR(canvas) {
+    arSource = new THREEx.ArToolkitSource({ sourceType: 'webcam' });
+    arSource.init(() => setTimeout(onResize, 200));
+    window.addEventListener('resize', onResize);
+
+    arContext = new THREEx.ArToolkitContext({
+        cameraParametersUrl:
+            'https://raw.githack.com/AR-js-org/AR.js/3.4.5/data/data/camera_para.dat',
+        detectionMode:    'mono',
+        maxDetectionRate: 30,
+    });
+    arContext.init();
+    markerRoot = new THREE.Group();
+    markerRoot.matrixAutoUpdate = false;
+ 
+    arMarker = new THREEx.ArMarkerControls(arContext, markerRoot, {
+        type:       'pattern',
+        patternUrl: 'pattern.patt',
+    });
+ 
+    function onResize() {
+        arSource.onResizeElement();
+        arSource.copyElementSizeTo(canvas);
+        if (arContext.arController !== null) {
+            arSource.copyElementSizeTo(arContext.arController.canvas);
+        }
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width  = canvas.clientWidth  * dpr;
+        canvas.height = canvas.clientHeight * dpr;
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    }
 }
 
 function renderLoop() {
@@ -305,6 +375,13 @@ function init() {
   } catch (e) {
     document.getElementById("canvas-holder").innerHTML =
       "<p>Sorry, could not initialise WebGL: " + e + "</p>";
+    return;
+  }
+  try{
+    initAR(canvas);
+  } catch(e){
+    document.getElementById("canvas-holder").innerHTML =
+      "<p>Sorry, could not initialise AR: " + e + "</p>";
     return;
   }
 

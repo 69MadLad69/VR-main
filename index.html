@@ -25,6 +25,9 @@ body {
     width: 100%;
     height: 100%;
     display: block;
+    z-index: 1;
+    position: absolute;
+    top: 0; left: 0;
 }
 
 #controls {
@@ -146,6 +149,28 @@ button:hover {
     color: #e8a838;
     display: none;
 }
+
+canvas[id^="ar"] { display: none !important; }
+ 
+#status {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.72);
+    color: #eee;
+    font-size: 13px;
+    padding: 7px 18px;
+    border: 1px solid #555;
+    border-radius: 20px;
+    pointer-events: none;
+    transition: color 0.3s, border-color 0.3s;
+}
+#status.found {
+    color: #4CAF50;
+    border-color: #4CAF50;
+}
 </style>
 
 <script src="./Utils/trackball-rotator.js"></script>
@@ -154,6 +179,10 @@ button:hover {
 <script src="./Model.js"></script>
 <script src="./Utils/StereoCamera.js"></script>
 <script src="./main.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/build/ar-threex.js"></script>
+<script src="./ar-main.js"></script>
 </head>
 
 <body onload="init()">
@@ -162,7 +191,7 @@ button:hover {
 <canvas id="webglcanvas"></canvas>
 
 <div id="controls">
-    <h3>WebGL Stereo Camera</h3>
+    <h3>Control Task — AR Surface</h3>
 
     <div class="control-group">
         <label>Eye Separation:
@@ -199,6 +228,8 @@ button:hover {
     <div id="camStatus">
         🎥 Requesting webcam...
     </div>
+
+    <div id="status">🎯 Point camera at your printed marker...</div>
 
     <div class="info">
         <strong>Controls:</strong><br>
