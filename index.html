@@ -189,13 +189,70 @@ canvas[id^="ar"] { display: none !important; }
 <div id="canvas-holder">
 <canvas id="webglcanvas"></canvas>
 
-<div id="status">🎯 Point camera at your printed marker...</div>
-<div id="camStatus">
-    🎥 Requesting webcam...
+<div id="controls">
+    <h3>Control Task — AR Surface</h3>
+
+    <div class="control-group">
+        <label>Eye Separation:
+            <span id="eyeSepVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="eyeSep" min="0" max="2" step="0.01" value="0.5">
+    </div>
+
+    <div class="control-group">
+        <label>Field of View (°):
+            <span id="fovVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="fov" min="5" max="90" step="0.5" value="80">
+    </div>
+
+    <div class="control-group">
+        <label>Near Clip Distance:
+            <span id="nearVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="near" min="0.5" max="9.5" step="0.1" value="3">
+    </div>
+
+    <div class="control-group">
+        <label>Convergence Distance:
+            <span id="convergenceVal" class="value-display">—</span>
+        </label>
+        <input type="range" id="convergence" min="1" max="20" step="0.1" value="10">
+    </div>
+
+    <div id="warning">
+        ⚠ Near clip ≥ convergence — stereo may look wrong.
+    </div>
+
+    <div id="camStatus">
+        🎥 Requesting webcam...
+    </div>
+
+    <div id="status">🎯 Point camera at your printed marker...</div>
+
+    <div class="info">
+        <strong>Controls:</strong><br>
+        • Drag to rotate<br>
+        • Scroll to zoom<br>
+        • Wear red/cyan glasses<br>
+        • Hide menu: toggle button
+    </div>
 </div>
+
+<button class="toggle-menu" id="toggleMenu">Hide Menu</button>
 </div>
 
 <script>
+const controls = document.getElementById("controls");
+const toggleBtn = document.getElementById("toggleMenu");
+
+toggleBtn.addEventListener("click", () => {
+    controls.classList.toggle("hidden");
+    toggleBtn.textContent =
+        controls.classList.contains("hidden") ? "Show Menu" : "Hide Menu";
+    toggleBtn.style.left =
+        controls.classList.contains("hidden") ? "10px" : "270px";
+});
 
 function resizeCanvas() {
     const canvas = document.getElementById("webglcanvas");

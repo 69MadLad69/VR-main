@@ -361,8 +361,6 @@ function initGL() {
     8.0,
     20.0,
   );
-
-  initWebcam();
   gl.enable(gl.DEPTH_TEST);
 }
 
