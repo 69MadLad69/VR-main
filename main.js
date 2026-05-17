@@ -18,6 +18,9 @@ let video;
 let webcamTexture;
 let quadVBO;
 
+let surfaceLineIdxBuffer = null;
+let surfaceLineCount = 0;
+
 function ShaderProgram(name, program) {
   this.name = name;
   this.prog = program;
@@ -111,7 +114,7 @@ function draw() {
     gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, projMat.elements);
 
     const markerMat = Array.from(markerRoot.matrix.elements);
-    const scaleMat  = m4.scaling(0.7, 0.7, 0.7);
+    const scaleMat  = m4.scaling(0.15, 0.15, 0.15);
     const modelView = m4.multiply(markerMat, scaleMat);
     gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, modelView);
 
@@ -127,7 +130,9 @@ function draw() {
     gl.disable(gl.POLYGON_OFFSET_FILL);
 
     gl.uniform4fv(shProgram.iColor, [1.0, 1.0, 1.0, 1.0]);
-    surface.DrawWireframe();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surfaceLineIdxBuffer);
+    gl.drawElements(gl.LINES, surfaceLineCount, gl.UNSIGNED_SHORT, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
 }
 
 function updateStatus() {
@@ -302,6 +307,19 @@ function CreateSurfaceData(data) {
 
   data.verticesF32 = new Float32Array(vertices);
   data.indicesU16 = new Uint16Array(indices);
+
+  const lineIndices = [];
+  for (let i = 0; i <= tSteps; i++) {
+    for (let j = 0; j < uSteps; j++) {
+      lineIndices.push(i * (uSteps + 1) + j, i * (uSteps + 1) + j + 1);
+    }
+  }
+  for (let j = 0; j <= uSteps; j++) {
+    for (let i = 0; i < tSteps; i++) {
+      lineIndices.push(i * (uSteps + 1) + j, (i + 1) * (uSteps + 1) + j);
+    }
+  }
+  data.lineIndicesU16 = new Uint16Array(lineIndices);
 }
 
 function initGL() {
