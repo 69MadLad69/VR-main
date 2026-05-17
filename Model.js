@@ -99,3 +99,44 @@ function CreateSurfaceData(data) {
     data.indicesU16[i * 3 + 2] = triangles[i].v2;
   }
 }
+
+/**
+ * @param {object} data
+ * @param {number} radius
+ * @param {number} uSteps
+ * @param {number} vSteps
+ */
+
+function CreateSphereData(data, radius, uSteps, vSteps) {
+    const verts   = [];
+    const indices = [];
+
+    for (let v = 0; v <= vSteps; v++) {
+        const theta = v * Math.PI / vSteps;
+        const sinT  = Math.sin(theta);
+        const cosT  = Math.cos(theta);
+ 
+        for (let u = 0; u <= uSteps; u++) {
+            const phi  = u * 2 * Math.PI / uSteps;
+            verts.push(
+                radius * sinT * Math.cos(phi),
+                radius * cosT,
+                radius * sinT * Math.sin(phi)
+            );
+        }
+    }
+
+    for (let v = 0; v < vSteps; v++) {
+        for (let u = 0; u < uSteps; u++) {
+            const row  = uSteps + 1;
+            const i0   = v * row + u;
+            const i1   = i0 + 1;
+            const i2   = i0 + row;
+            const i3   = i2 + 1;
+            indices.push(i0, i2, i1,   i1, i2, i3);
+        }
+    }
+ 
+    data.verticesF32 = new Float32Array(verts);
+    data.indicesU16  = new Uint16Array(indices);
+}

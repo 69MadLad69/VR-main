@@ -2,6 +2,7 @@
 
 let gl;
 let surface;
+let sphere;
 let shProgram;
 let webcamProg;
 let spaceball;
@@ -11,9 +12,19 @@ let video;
 let webcamTexture;
 let quadVBO;
 
-let ws = null;
-let sensorRotMatrix = null;
+const SOUND_RADIUS = 2.5;
 
+let soundSourcePos = [0.0, 0.0, SOUND_RADIUS];
+
+let audioCtx = null;
+let panner = null;
+let hpFilter = null;
+let gainNode = null;
+let audioSrc = null;
+let audioBuffer = null;
+let isPlaying = false;
+
+let ws = null;
 let filteredAccel = { x: 0.0, y: 0.0, z: 9.81 };
 const SMOOTH = 0.15;
 
@@ -29,38 +40,131 @@ function ShaderProgram(name, program) {
   };
 }
 
-/**
- * @param {number} ax
- * @param {number} ay
- * @param {number} az
- * @returns {number[]}
- */
-function accelToRotationMatrix(ax, ay, az) {
+function ensureAudioContext() {
+  if (audioCtx) return;
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  panner = audioCtx.createPanner();
+  panner.panningModel = "HRTF";
+  panner.distanceModel = "inverse";
+  panner.refDistance = 2.0;
+  panner.maxDistance = 100.0;
+  panner.rolloffFactor = 5;
+  panner.coneInnerAngle = 360;
+  panner.coneOuterAngle = 360;
+  panner.coneOuterGain = 0;
+
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = parseFloat(document.getElementById('volume').value);
+  gainNode.connect(audioCtx.destination);
+
+  panner.disconnect();
+  panner.connect(gainNode);
+
+  hpFilter = audioCtx.createBiquadFilter();
+  hpFilter.type = "highpass";
+  hpFilter.frequency.value = parseFloat(
+    document.getElementById("hpfFreq").value,
+  );
+  hpFilter.Q.value = parseFloat(document.getElementById("hpfQ").value);
+
+  const L = audioCtx.listener;
+  if (L.positionX !== undefined) {
+    L.positionX.value = 0;
+    L.positionY.value = 0;
+    L.positionZ.value = 0;
+    L.forwardX.value = 0;
+    L.forwardY.value = 0;
+    L.forwardZ.value = -1;
+    L.upX.value = 0;
+    L.upY.value = 1;
+    L.upZ.value = 0;
+  } else {
+    L.setPosition(0, 0, 0);
+    L.setOrientation(0, 0, -1, 0, 1, 0);
+  }
+
+  updatePannerPosition();
+}
+
+function updatePannerPosition() {
+  if (!panner || !audioCtx) return;
+  const [x, y, z] = soundSourcePos;
+  if (panner.positionX !== undefined) {
+    const t = audioCtx.currentTime;
+    panner.positionX.setValueAtTime(x, t);
+    panner.positionY.setValueAtTime(y, t);
+    panner.positionZ.setValueAtTime(z, t);
+  } else {
+    panner.setPosition(x, y, z);
+  }
+}
+
+function connectGraph() {
+  if (!audioSrc || !panner) return;
+  try {
+    audioSrc.disconnect();
+  } catch (_) {}
+  try {
+    hpFilter.disconnect();
+  } catch (_) {}
+
+  if (document.getElementById("filterEnabled").checked) {
+    audioSrc.connect(hpFilter);
+    hpFilter.connect(panner);
+  } else {
+    audioSrc.connect(panner);
+  }
+}
+
+async function loadAudioFile(file) {
+  ensureAudioContext();
+  const ab = await file.arrayBuffer();
+  audioBuffer = await audioCtx.decodeAudioData(ab);
+  document.getElementById("playBtn").disabled = false;
+  document.getElementById("playBtn").textContent = "Play";
+}
+
+function startPlayback() {
+  if (!audioBuffer) return;
+  ensureAudioContext();
+  audioCtx.resume();
+
+  if (audioSrc) {
+    try {
+      audioSrc.stop();
+    } catch (_) {}
+  }
+
+  audioSrc = audioCtx.createBufferSource();
+  audioSrc.buffer = audioBuffer;
+  audioSrc.loop = true;
+  connectGraph();
+  audioSrc.start();
+  isPlaying = true;
+  document.getElementById("playBtn").textContent = "Stop";
+}
+
+function stopPlayback() {
+  if (audioSrc) {
+    try {
+      audioSrc.stop();
+    } catch (_) {}
+    audioSrc = null;
+  }
+  isPlaying = false;
+  document.getElementById("playBtn").textContent = "Play";
+}
+
+function accelToSoundPos(ax, ay, az) {
   const len = Math.sqrt(ax * ax + ay * ay + az * az);
-  if (len < 1e-5) {
-    return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-  }
-
-  const gx = ax / len;
-  const gy = ay / len;
-  const gz = az / len;
-
-  const rax = -gy;
-  const ray = gx;
-
-  const axisLen = Math.sqrt(rax * rax + ray * ray);
-
-  if (axisLen < 1e-5) {
-    if (gz >= 0) {
-      return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    } else {
-      return m4.axisRotation([1, 0, 0], Math.PI);
-    }
-  }
-
-  const angle = Math.acos(Math.max(-1.0, Math.min(1.0, gz)));
-
-  return m4.axisRotation([rax / axisLen, ray / axisLen, 0], angle);
+  if (len < 1e-5) return [0.0, 0.0, SOUND_RADIUS];
+  return [
+    (ax / len) * SOUND_RADIUS,
+    (ay / len) * SOUND_RADIUS,
+    (az / len) * SOUND_RADIUS,
+  ];
 }
 
 function connectSensor() {
@@ -69,7 +173,6 @@ function connectSensor() {
   const url = `ws://${ip}:${port}/sensor/connect?type=android.sensor.accelerometer`;
 
   setSensorStatus("connecting");
-
   try {
     ws = new WebSocket(url);
   } catch (e) {
@@ -77,34 +180,32 @@ function connectSensor() {
     return;
   }
 
-  ws.onopen = () => {
-    setSensorStatus("connected");
-  };
+  ws.onopen = () => setSensorStatus("connected");
 
   ws.onmessage = (event) => {
     try {
-      const packet = JSON.parse(event.data);
-      const [ax, ay, az] = packet.values;
+      const {
+        values: [ax, ay, az],
+      } = JSON.parse(event.data);
 
       filteredAccel.x = SMOOTH * ax + (1 - SMOOTH) * filteredAccel.x;
       filteredAccel.y = SMOOTH * ay + (1 - SMOOTH) * filteredAccel.y;
       filteredAccel.z = SMOOTH * az + (1 - SMOOTH) * filteredAccel.z;
 
-      sensorRotMatrix = accelToRotationMatrix(
+      soundSourcePos = accelToSoundPos(
         filteredAccel.x,
         filteredAccel.y,
         filteredAccel.z,
       );
+      updatePannerPosition();
     } catch (_) {}
   };
 
   ws.onerror = () => {
     setSensorStatus("error", "Connection failed");
   };
-
   ws.onclose = () => {
     setSensorStatus("disconnected");
-    sensorRotMatrix = null;
     ws = null;
   };
 }
@@ -114,68 +215,53 @@ function disconnectSensor() {
     ws.close();
     ws = null;
   }
-  sensorRotMatrix = null;
   setSensorStatus("disconnected");
 }
 
-/**
- * @param {'connecting'|'connected'|'error'|'disconnected'} state
- * @param {string} [detail]
- */
 function setSensorStatus(state, detail) {
-  const statusEl = document.getElementById("wsStatus");
-  const btnEl = document.getElementById("wsConnect");
-
-  const labels = {
-    connecting: { text: "○ Connecting…", color: "#FFC107" },
-    connected: { text: "● Connected", color: "#4CAF50" },
-    error: {
-      text: "● Error" + (detail ? ": " + detail : ""),
-      color: "#F44336",
-    },
-    disconnected: { text: "● Disconnected", color: "#888" },
+  const el = document.getElementById("wsStatus");
+  const btn = document.getElementById("wsConnect");
+  const map = {
+    connecting: ["○ Connecting…", "#FFC107"],
+    connected: ["● Connected", "#4CAF50"],
+    error: ["● Error" + (detail ? ": " + detail : ""), "#F44336"],
+    disconnected: ["● Disconnected", "#888"],
   };
-
-  const label = labels[state] || labels.disconnected;
-  statusEl.textContent = label.text;
-  statusEl.style.color = label.color;
+  const [text, color] = map[state] || map.disconnected;
+  el.textContent = text;
+  el.style.color = color;
 
   if (state === "connected" || state === "connecting") {
-    btnEl.textContent = state === "connecting" ? "Cancel" : "Disconnect";
-    btnEl.onclick = disconnectSensor;
+    btn.textContent = state === "connecting" ? "Cancel" : "Disconnect";
+    btn.onclick = disconnectSensor;
   } else {
-    btnEl.textContent = "Connect";
-    btnEl.onclick = connectSensor;
+    btn.textContent = "Connect";
+    btn.onclick = connectSensor;
   }
 }
 
-/**
- * @param {Float32Array} frustumMat
- * @param {number[]}     eyeTranslate
- */
+function bindModel(model) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, model.iVertexBuffer);
+  gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(shProgram.iAttribVertex);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, model.iIndexBuffer);
+}
+
 function drawEye(frustumMat, eyeTranslate) {
   drawWebcamBackground();
 
   gl.useProgram(shProgram.prog);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, surface.iVertexBuffer);
-  gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(shProgram.iAttribVertex);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
-
   gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, frustumMat);
-
-  const baseRotation =
-    sensorRotMatrix !== null ? sensorRotMatrix : spaceball.getViewMatrix();
 
   const rotateToCenter = m4.axisRotation([0.707, 0.707, 0], 0.7);
   const translateToScene = m4.translation(0, 0, -10);
 
-  let acc = m4.multiply(rotateToCenter, baseRotation);
-  acc = m4.multiply(eyeTranslate, acc);
-  acc = m4.multiply(translateToScene, acc);
+  bindModel(surface);
 
-  gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, acc);
+  let accSurface = m4.multiply(rotateToCenter, spaceball.getViewMatrix());
+  accSurface = m4.multiply(eyeTranslate, accSurface);
+  accSurface = m4.multiply(translateToScene, accSurface);
+  gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, accSurface);
 
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1.0, 1.0);
@@ -185,6 +271,18 @@ function drawEye(frustumMat, eyeTranslate) {
 
   gl.uniform4fv(shProgram.iColor, [1.0, 1.0, 1.0, 1.0]);
   surface.DrawWireframe();
+
+  bindModel(sphere);
+
+  let accSphere = m4.multiply(
+    eyeTranslate,
+    m4.translation(soundSourcePos[0], soundSourcePos[1], soundSourcePos[2]),
+  );
+  accSphere = m4.multiply(translateToScene, accSphere);
+  gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, accSphere);
+
+  gl.uniform4fv(shProgram.iColor, [1.0, 0.75, 0.0, 1.0]);
+  sphere.Draw();
 }
 
 function drawWebcamBackground() {
@@ -194,7 +292,6 @@ function drawWebcamBackground() {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
 
   gl.useProgram(webcamProg.prog);
-
   gl.disable(gl.DEPTH_TEST);
   gl.depthMask(false);
 
@@ -204,7 +301,6 @@ function drawWebcamBackground() {
   gl.enableVertexAttribArray(webcamProg.iPosition);
   gl.enableVertexAttribArray(webcamProg.iTexCoord);
   gl.uniform1i(webcamProg.iSampler, 0);
-
   gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
   gl.enable(gl.DEPTH_TEST);
@@ -237,9 +333,7 @@ function renderLoop() {
 
 function initWebcam() {
   video = document.createElement("video");
-  video.autoplay = true;
-  video.playsInline = true;
-  video.muted = true;
+  video.autoplay = video.playsInline = video.muted = true;
 
   navigator.mediaDevices
     .getUserMedia({ video: { facingMode: "user" } })
@@ -273,12 +367,13 @@ function initWebcam() {
     new Uint8Array([0, 0, 0, 255]),
   );
 
-  const quad = new Float32Array([
-    -1, -1, 0, 1, 1, -1, 1, 1, 1, 1, 1, 0, -1, 1, 0, 0,
-  ]);
   quadVBO = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
-  gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 0, 1, 1, -1, 1, 1, 1, 1, 1, 0, -1, 1, 0, 0]),
+    gl.STATIC_DRAW,
+  );
 }
 
 function CreateSurfaceData(data) {
@@ -358,10 +453,15 @@ function initGL() {
   webcamProg.iTexCoord = gl.getAttribLocation(progCam, "aTexCoord");
   webcamProg.iSampler = gl.getUniformLocation(progCam, "uSampler");
 
-  const data = {};
-  CreateSurfaceData(data);
+  const surfData = {};
+  CreateSurfaceData(surfData);
   surface = new Model("Surface");
-  surface.BufferData(data.verticesF32, data.indicesU16);
+  surface.BufferData(surfData.verticesF32, surfData.indicesU16);
+
+  const sphData = {};
+  CreateSphereData(sphData, 0.22, 18, 14);
+  sphere = new Model("SoundSource");
+  sphere.BufferData(sphData.verticesF32, sphData.indicesU16);
 
   stereoCam = new StereoCamera(
     10.0,
@@ -440,7 +540,35 @@ function init() {
     stereoCam.mConvergence = v;
   });
 
-  setSensorStatus("disconnected");
+  document.getElementById("audioFile").addEventListener("change", function () {
+    const file = this.files[0];
+    if (file)
+      loadAudioFile(file).catch((e) => alert("Could not decode audio: " + e));
+  });
 
+  document.getElementById("playBtn").addEventListener("click", function () {
+    if (isPlaying) stopPlayback();
+    else startPlayback();
+  });
+
+  document
+    .getElementById("filterEnabled")
+    .addEventListener("change", function () {
+      connectGraph();
+    });
+
+  bindSlider("hpfFreq", "hpfFreqVal", (v) => {
+    if (hpFilter) hpFilter.frequency.value = v;
+  });
+
+  bindSlider("hpfQ", "hpfQVal", (v) => {
+    if (hpFilter) hpFilter.Q.value = v;
+  });
+
+  bindSlider('volume', 'volumeVal', v => {
+        if (gainNode) gainNode.gain.value = v;
+  });
+
+  setSensorStatus("disconnected");
   renderLoop();
 }
