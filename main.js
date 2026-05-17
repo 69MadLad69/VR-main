@@ -11,6 +11,7 @@ let arSource;
 let arContext;
 let arMarker;
 let markerRoot;
+let arContextReady = false; 
 let lastVisible = null;
 
 let video;
@@ -110,7 +111,7 @@ function draw() {
     gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, projMat.elements);
 
     const markerMat = Array.from(markerRoot.matrix.elements);
-    const scaleMat  = m4.scaling(0.5, 0.5, 0.5);
+    const scaleMat  = m4.scaling(0.7, 0.7, 0.7);
     const modelView = m4.multiply(markerMat, scaleMat);
     gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, modelView);
 
@@ -142,24 +143,47 @@ function updateStatus() {
     }
 }
 
+const HIRO_PATTERN_URL =
+    'https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro';
+ 
+const CAMERA_PARA_URL =
+    'https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat';
+
 function initAR(canvas) {
-    arSource = new THREEx.ArToolkitSource({ sourceType: 'webcam' });
+    arSource = new THREEx.ArToolkitSource({
+        sourceType:  'webcam',
+        sourceWidth: 1280,
+        sourceHeight: 960,
+        displayWidth: window.innerWidth,
+        displayHeight: window.innerHeight,
+    });
     arSource.init(() => setTimeout(onResize, 200));
     window.addEventListener('resize', onResize);
 
     arContext = new THREEx.ArToolkitContext({
-        cameraParametersUrl:
-            'https://raw.githack.com/AR-js-org/AR.js/3.4.5/data/data/camera_para.dat',
-        detectionMode:    'mono',
-        maxDetectionRate: 30,
+        cameraParametersUrl: CAMERA_PARA_URL,
+        detectionMode:      'mono_and_matrix',
+        matrixCodeType:     '3x3',
+        patternRatio:       0.5,
+        canvasWidth:        640,
+        canvasHeight:       480,
+        maxDetectionRate:   60,
     });
-    arContext.init();
+    arContext.init(() => {
+        arContextReady = true;
+    });
+
     markerRoot = new THREE.Group();
     markerRoot.matrixAutoUpdate = false;
  
     arMarker = new THREEx.ArMarkerControls(arContext, markerRoot, {
-        type:       'pattern',
-        patternUrl: 'pattern.patt',
+        type:        'pattern',
+        patternUrl:  pattern.patt,
+        changeMatrixMode: 'modelViewMatrix',
+        smooth:            true,
+        smoothCount:       5,
+        smoothTolerance:   0.01,
+        smoothThreshold:   2,
     });
  
     function onResize() {
@@ -168,9 +192,6 @@ function initAR(canvas) {
         if (arContext.arController !== null) {
             arSource.copyElementSizeTo(arContext.arController.canvas);
         }
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width  = canvas.clientWidth  * dpr;
-        canvas.height = canvas.clientHeight * dpr;
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     }
 }
