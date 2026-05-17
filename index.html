@@ -196,16 +196,6 @@ canvas[id^="ar"] { display: none !important; }
 </div>
 
 <script>
-const controls = document.getElementById("controls");
-const toggleBtn = document.getElementById("toggleMenu");
-
-toggleBtn.addEventListener("click", () => {
-    controls.classList.toggle("hidden");
-    toggleBtn.textContent =
-        controls.classList.contains("hidden") ? "Show Menu" : "Hide Menu";
-    toggleBtn.style.left =
-        controls.classList.contains("hidden") ? "10px" : "270px";
-});
 
 function resizeCanvas() {
     const canvas = document.getElementById("webglcanvas");
