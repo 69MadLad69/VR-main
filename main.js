@@ -127,15 +127,12 @@ function draw() {
   gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
   gl.enableVertexAttribArray(shProgram.iAttribVertex);
 
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1.0, 1.0);
-  gl.uniform4fv(shProgram.iColor, [0.15, 0.15, 0.15, 0.4]);
+  gl.uniform4fv(shProgram.iColor, [0.55, 0.55, 0.55, 1.0]);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surface.iIndexBuffer);
   surface.Draw();
   gl.disable(gl.POLYGON_OFFSET_FILL);
-  gl.disable(gl.BLEND);
 
   gl.uniform4fv(shProgram.iColor, [1.0, 1.0, 1.0, 1.0]);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, surfaceLineIdxBuffer);
