@@ -188,7 +188,7 @@ function initAR(canvas) {
 
   arMarker = new THREEx.ArMarkerControls(arContext, markerRoot, {
     type: "pattern",
-    patternUrl: './pattern.patt',
+    patternUrl: './pattern-marker.patt',
     changeMatrixMode: "modelViewMatrix",
     smooth: true,
     smoothCount: 5,
