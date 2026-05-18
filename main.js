@@ -188,7 +188,7 @@ function initAR(canvas) {
 
   arMarker = new THREEx.ArMarkerControls(arContext, markerRoot, {
     type: "pattern",
-    patternUrl: HIRO_PATTERN_URL,
+    patternUrl: './pattern.patt',
     changeMatrixMode: "modelViewMatrix",
     smooth: true,
     smoothCount: 5,
